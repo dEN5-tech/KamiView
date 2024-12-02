@@ -1,5 +1,8 @@
 # KamiView
 
+![KamiView Preview](docs/images/kamiview_J6w6YHF97O.png)
+
+
 Современное приложение для просмотра аниме с удобным интерфейсом.
 
 ## Возможности
