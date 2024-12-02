@@ -38,8 +38,24 @@ fn main() {
 #[cfg(not(all(target_os = "windows", feature = "windows_build")))]
 fn main() {
     // Linux build steps
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=PKG_CONFIG_PATH");
+    
+    // Link required libraries
     println!("cargo:rustc-link-lib=mpv");
     println!("cargo:rustc-link-lib=X11");
+    println!("cargo:rustc-link-lib=gtk-3");
+    println!("cargo:rustc-link-lib=gdk-3");
+    println!("cargo:rustc-link-lib=cairo");
+    println!("cargo:rustc-link-lib=pango-1.0");
+    
+    // Set pkg-config path
+    if std::env::var("PKG_CONFIG_PATH").is_err() {
+        std::env::set_var(
+            "PKG_CONFIG_PATH",
+            "/usr/lib/pkgconfig:/usr/share/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig"
+        );
+    }
 }
 
 fn copy_resources(from: &Path, to: &Path) {
