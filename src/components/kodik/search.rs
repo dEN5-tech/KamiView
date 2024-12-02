@@ -1,6 +1,6 @@
 use iced::widget::{column, row, Button, TextInput, Text};
 use iced::{Element, Length};
-use crate::theme::Theme;
+use crate::theme::{Theme, ButtonVariant};
 use crate::Message;
 use crate::fonts;
 
@@ -24,11 +24,11 @@ impl KodikSearch {
                     Text::new("Search")
                         .font(fonts::get_regular_font())
                         .size(14)
-                        .style(iced::theme::Text::Color(theme.text_on_primary))
+                        .style(iced::theme::Text::Color(theme.text))
                 )
                 .width(Length::Shrink)
                 .padding(12)
-                .style(iced::theme::Button::Custom(Box::new(theme.button(true, false))))
+                .style(theme.button(ButtonVariant::Primary))
                 .on_press(Message::SearchKodik)
             ]
             .spacing(8)

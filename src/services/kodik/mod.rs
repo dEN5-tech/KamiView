@@ -194,10 +194,16 @@ impl KodikService {
     }
 
     pub async fn get_translations(&self, id: &str) -> Result<Vec<Translation>, String> {
+        log::debug!("Getting translations for id: {}", id);
         let parser = self.parser.read().await;
-        parser.translations(id, "shikimori")
+        let result = parser.translations(id, "shikimori")
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                log::error!("Failed to get translations: {}", e);
+                e.to_string()
+            })?;
+        log::debug!("Found {} translations", result.len());
+        Ok(result)
     }
 
     pub async fn search_by_id(

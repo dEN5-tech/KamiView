@@ -1,7 +1,7 @@
 use iced::widget::{column, row, Button, text};
 use iced::{Element, Length};
 use iced::alignment::{Horizontal, Vertical};
-use crate::theme::Theme;
+use crate::theme::{Theme, ContainerVariant, ButtonVariant};
 use crate::Message;
 use crate::services::kodik::SearchResult;
 use crate::components::common::{Card, Text, TextProps};
@@ -55,7 +55,7 @@ impl ResultCard {
                 20,
             )
         )
-        .style(theme.transparent())
+        .style(theme.button(ButtonVariant::Text))
         .width(Length::Fill)
         .on_press(Message::NavigateTo(Screen::Details(result_clone)))
         .into()

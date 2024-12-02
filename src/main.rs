@@ -10,6 +10,7 @@ mod resources;
 mod config;
 mod logger;
 mod fonts;
+mod protocol;
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -26,11 +27,15 @@ use services::kodik::{KodikService, SearchResult, Translation};
 use theme::{Theme as AppTheme, ThemeVariant};
 use navigation::Screen;
 use config::CONFIG;
-use screens::anime_details::AnimeDetailsScreen;
+use screens::anime_details;
 use open::that;
 use components::kodik::episode_list::Episode;
 use services::mpv::{MpvService, MpvEvent};
-use iced::Font;
+use crate::services::shikimori::UserInfo;
+use screens::profile_details::ProfileDetailsScreen;
+use services::storage::{StorageService, AuthTokens};
+use services::config::{ConfigService, AppConfig};
+use iced::Color;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Tab {
@@ -42,6 +47,7 @@ pub enum Tab {
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    None,
     TabSelected(Tab),
     SearchInputChanged(String),
     SearchKodik,
@@ -75,6 +81,15 @@ pub enum Message {
     SetVolume(i64),
     StopVideo,
     MpvEvent(MpvEvent),
+    OAuthCallback(String),
+    StartAuth,
+    Logout,
+    AuthSuccess(String),
+    AuthError(String),
+    UserInfoReceived(UserInfo),
+    AuthCodeEntered(String),
+    CancelAuth,
+    ToggleAutoAuth(bool),
 }
 
 
@@ -97,20 +112,105 @@ struct MaterialApp {
     translations: Vec<Translation>,
     selected_translation: Option<String>,
     mpv_service: MpvService,
+    auth_token: Option<String>,
+    username: Option<String>,
+    profile_screen: ProfileDetailsScreen,
+    user_info: Option<UserInfo>,
+    config: AppConfig,
+    config_service: ConfigService,
+}
+
+impl MaterialApp {
+    fn initialize_auth(&mut self) -> Command<Message> {
+        match StorageService::new() {
+            Ok(storage) => {
+                match storage.load_auth_tokens() {
+                    Ok(Some(tokens)) => {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs();
+
+                        if now < tokens.expires_at {
+                            self.auth_token = Some(tokens.access_token.clone());
+                            self.profile_screen.set_authenticated();
+                            
+                            if let Ok(service) = services::shikimori::ShikimoriOAuth::new() {
+                                return Command::perform(
+                                    async move { service.get_user_info().await },
+                                    |result| match result {
+                                        Ok(user_info) => Message::UserInfoReceived(user_info),
+                                        Err(e) => Message::AuthError(e.to_string()),
+                                    }
+                                );
+                            }
+                        } else {
+                            self.auth_token = None;
+                            self.user_info = None;
+                            if let Err(e) = storage.delete_auth_tokens() {
+                                log::error!("Failed to delete expired tokens: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => log::error!("Failed to load auth tokens: {}", e),
+                    _ => {}
+                }
+            }
+            Err(e) => log::error!("Failed to initialize storage: {}", e),
+        }
+        Command::none()
+    }
 }
 
 impl Application for MaterialApp {
     type Message = Message;
     type Theme = Theme;
     type Executor = executor::Default;
-    type Flags = ();
+    type Flags = Option<Message>;
 
-    fn new(_flags: ()) -> (Self, Command<Message>) {
-        let app = MaterialApp {
+    fn new(flags: Self::Flags) -> (Self, Command<Message>) {
+        let config_service = ConfigService::new()
+            .expect("Failed to initialize config service");
+        let config = config_service.load_config()
+            .unwrap_or_default();
+
+        let mpv_service = MpvService::instance();
+        let mpv_events = mpv_service.subscribe();
+
+        // Initialize MPV service and start event listener
+        let mpv_command = Command::perform(
+            async move {
+                let mut events = mpv_events;
+                while let Ok(event) = events.recv().await {
+                    // Handle MPV events
+                    match event {
+                        MpvEvent::PropertyChange { name, value } => {
+                            // Handle property changes
+                        }
+                        MpvEvent::PlaybackFinished => {
+                            // Handle playback finished
+                        }
+                        MpvEvent::Error(error) => {
+                            // Handle errors
+                        }
+                    }
+                }
+                Ok::<(), std::io::Error>(())
+            },
+            |result: Result<(), std::io::Error>| {
+                if let Err(e) = result {
+                    Message::Error(e.to_string())
+                } else {
+                    Message::None
+                }
+            }
+        );
+
+        let mut app = MaterialApp {
             selected_tab: Tab::Home,
             search_input: String::new(),
-            theme: AppTheme::default(),
-            theme_variant: ThemeVariant::default(),
+            theme: AppTheme::with_variant(ThemeVariant::Dark),
+            theme_variant: ThemeVariant::Dark,
             is_loading: false,
             current_screen: Screen::Main,
             navigation_history: Vec::new(),
@@ -124,21 +224,31 @@ impl Application for MaterialApp {
             video_loading: false,
             translations: Vec::new(),
             selected_translation: None,
-            mpv_service: MpvService::new(),
+            mpv_service,
+            auth_token: None,
+            username: None,
+            profile_screen: ProfileDetailsScreen::new(),
+            user_info: None,
+            config,
+            config_service,
         };
 
-        (
-            app,
-            Command::perform(
-                async {
-                    KodikService::new(Some(CONFIG.kodik_token.clone())).await
-                },
-                |result| match result {
-                    Ok(service) => Message::KodikServiceInitialized(Arc::new(RwLock::new(service))),
-                    Err(e) => Message::Error(e.to_string()),
-                }
-            )
-        )
+        let auth_command = app.initialize_auth();
+        let kodik_command = Command::perform(
+            async {
+                KodikService::new(Some(CONFIG.kodik_token.clone())).await
+            },
+            |result| match result {
+                Ok(service) => Message::KodikServiceInitialized(Arc::new(RwLock::new(service))),
+                Err(e) => Message::Error(e.to_string()),
+            }
+        );
+
+        (app, Command::batch(vec![
+            auth_command,
+            kodik_command,
+            mpv_command,
+        ]))
     }
 
     fn title(&self) -> String {
@@ -147,6 +257,7 @@ impl Application for MaterialApp {
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
+            Message::None => Command::none(),
             Message::TabSelected(tab) => {
                 self.selected_tab = tab;
                 Command::none()
@@ -220,6 +331,7 @@ impl Application for MaterialApp {
                 ])
             }
             Message::TranslationsLoaded(Ok(translations)) => {
+                log::info!("Translations loaded: {:?}", translations);
                 self.translations = translations;
                 if let Some(first) = self.translations.first() {
                     self.selected_translation = Some(first.id.clone());
@@ -246,7 +358,15 @@ impl Application for MaterialApp {
                 Command::none()
             }
             Message::Exit => {
-                window::close()
+                // Shutdown MPV service before exit
+                let service = self.mpv_service.clone();
+                Command::perform(
+                    async move { 
+                        let _ = service.shutdown().await;
+                        std::process::exit(0);
+                    },
+                    |_| Message::None
+                )
             }
             Message::CancelExit => {
                 Command::none()
@@ -256,7 +376,7 @@ impl Application for MaterialApp {
             }
             Message::ThemeChanged(variant) => {
                 self.theme_variant = variant;
-                self.theme = AppTheme::new(variant);
+                self.theme = AppTheme::with_variant(variant);
                 Command::none()
             }
             Message::ImageLoaded(_url, _bytes) => {
@@ -354,10 +474,10 @@ impl Application for MaterialApp {
                     Command::none()
                 }
             }
-            Message::VideoLoadSucceeded(url, quality) => {
+            Message::VideoLoadSucceeded(url, _quality) => {
                 self.video_loading = false;
                 // Handle successful video load
-                log::info!("Video loaded: {} ({}p)", url, quality);
+                log::info!("Video loaded: {}", url);
                 Command::none()
             }
             Message::VideoLoadFailed(error) => {
@@ -380,10 +500,16 @@ impl Application for MaterialApp {
                 self.error = Some(error);
                 Command::none()
             }
-            Message::VideoLinkReceived(Ok((url, quality))) => {
+            Message::VideoLinkReceived(Ok((url, _quality))) => {
                 self.video_loading = false;
-                log::info!("Video loaded: {} ({}p)", url, quality);
-                Command::none()
+                self.error = None;
+                Command::perform(
+                    async move { MpvService::play_video(&url).await },
+                    |result| match result {
+                        Ok(_) => Message::None,
+                        Err(e) => Message::Error(e.to_string()),
+                    }
+                )
             }
             Message::VideoLinkReceived(Err(error)) => {
                 self.video_loading = false;
@@ -490,6 +616,112 @@ impl Application for MaterialApp {
                 }
                 Command::none()
             }
+            Message::OAuthCallback(code) => {
+                let service = services::shikimori::ShikimoriOAuth::new()
+                    .expect("Failed to initialize ShikimoriOAuth");
+                Command::perform(
+                    async move { service.exchange_code(&code).await },
+                    |result| match result {
+                        Ok(token) => Message::AuthSuccess(token.access_token),
+                        Err(e) => Message::AuthError(e.to_string()),
+                    }
+                )
+            }
+            Message::StartAuth => {
+                let service = services::shikimori::ShikimoriOAuth::new()
+                    .expect("Failed to initialize ShikimoriOAuth");
+                let auth_url = service.get_auth_url();
+                self.profile_screen.set_waiting_for_code(true);
+                Command::perform(async { that(auth_url) }, |result| {
+                    if let Err(e) = result {
+                        Message::Error(format!("Failed to open browser: {}", e))
+                    } else {
+                        Message::None
+                    }
+                })
+            }
+            Message::AuthSuccess(token) => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+
+                let tokens = AuthTokens {
+                    access_token: token.clone(),
+                    refresh_token: token.clone(),
+                    expires_at: now + 3600,
+                };
+
+                if let Ok(storage) = StorageService::new() {
+                    if let Err(e) = storage.save_auth_tokens(&tokens) {
+                        log::error!("Failed to save auth tokens: {}", e);
+                    }
+                }
+
+                self.auth_token = Some(token);
+                self.profile_screen.set_authenticated();
+
+                // Update last login in config
+                self.config.last_login = Some(chrono::Local::now().to_rfc3339());
+                if let Err(e) = self.config_service.save_config(&self.config) {
+                    log::error!("Failed to save config: {}", e);
+                }
+
+                // Fetch user profile after successful auth
+                let service = services::shikimori::ShikimoriOAuth::new()
+                    .expect("Failed to initialize ShikimoriOAuth");
+                Command::perform(
+                    async move { service.get_user_info().await },
+                    |result| match result {
+                        Ok(user_info) => Message::UserInfoReceived(user_info),
+                        Err(e) => Message::AuthError(e.to_string()),
+                    }
+                )
+            }
+            Message::AuthError(error) => {
+                self.profile_screen.set_error(error);
+                Command::none()
+            }
+            Message::Logout => {
+                // Clear stored tokens
+                if let Ok(storage) = StorageService::new() {
+                    if let Err(e) = storage.delete_auth_tokens() {
+                        log::error!("Failed to delete auth tokens: {}", e);
+                    }
+                }
+
+                self.auth_token = None;
+                self.user_info = None;
+                self.profile_screen = ProfileDetailsScreen::new();
+                Command::none()
+            }
+            Message::AuthCodeEntered(code) => {
+                let service = services::shikimori::ShikimoriOAuth::new()
+                    .expect("Failed to initialize ShikimoriOAuth");
+                Command::perform(
+                    async move { service.exchange_code(&code).await },
+                    |result| match result {
+                        Ok(token) => Message::AuthSuccess(token.access_token),
+                        Err(e) => Message::AuthError(e.to_string()),
+                    }
+                )
+            }
+            Message::CancelAuth => {
+                self.profile_screen.set_waiting_for_code(false);
+                Command::none()
+            }
+            Message::UserInfoReceived(info) => {
+                self.user_info = Some(info);
+                self.profile_screen.set_authenticated();
+                Command::none()
+            }
+            Message::ToggleAutoAuth(enabled) => {
+                self.config.auto_auth = enabled;
+                if let Err(e) = self.config_service.save_config(&self.config) {
+                    log::error!("Failed to save config: {}", e);
+                }
+                Command::none()
+            }
         }
     }
 
@@ -521,6 +753,14 @@ impl Application for MaterialApp {
                             .padding(20)
                             .into()
                         }
+                        Tab::Profile => {
+                            self.profile_screen.view(
+                                self.auth_token.is_some(),
+                                self.user_info.as_ref(),
+                                &self.config,
+                                &self.theme
+                            )
+                        }
                         _ => MainContent::view(
                             &self.selected_tab,
                             &self.search_input,
@@ -530,7 +770,6 @@ impl Application for MaterialApp {
                     }
                 };
 
-                
                 row![
                     AppContainer::view(
                         sidebar,
@@ -553,7 +792,7 @@ impl Application for MaterialApp {
                 .into()
             }
             Screen::Details(result) => {
-                AnimeDetailsScreen::view(
+                anime_details::view(
                     result,
                     self.selected_episode,
                     &self.episodes,
@@ -564,17 +803,58 @@ impl Application for MaterialApp {
                     self.selected_translation.as_deref(),
                 )
             }
+            Screen::Profile => {
+                self.profile_screen.view(
+                    self.auth_token.is_some(),
+                    self.user_info.as_ref(),
+                    &self.config,
+                    &self.theme
+                )
+            }
         }
+    }
+}
+
+impl Drop for MaterialApp {
+    fn drop(&mut self) {
+        // Try to shutdown MPV service on app exit
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let _ = self.mpv_service.shutdown().await;
+        });
     }
 }
 
 fn main() -> iced::Result {
     logger::init();
     
-    // Initialize fonts
-    fonts::init_fonts();
-    
-    let settings = Settings {
+    // Register custom protocol
+    #[cfg(target_os = "windows")]
+    {
+        use winreg::enums::*;
+        use winreg::RegKey;
+        
+        let hkcu = RegKey::predef(HKEY_CLASSES_ROOT);
+        let path = format!("{}\\shell\\open\\command", "kamiview");
+        if let Err(e) = hkcu.create_subkey(&path)
+            .and_then(|(key, _)| {
+                let exe_path = std::env::current_exe()?;
+                key.set_value("", &format!("\"{}\" \"%1\"", exe_path.display()))?;
+                Ok(())
+            })
+            .and_then(|_| {
+                let (protocol_key, _) = hkcu.create_subkey("kamiview")?;
+                protocol_key.set_value("", &"URL:KamiView Protocol")?;
+                protocol_key.set_value("URL Protocol", &"")?;
+                Ok(())
+            }) 
+        {
+            log::error!("Failed to register protocol handler: {}", e);
+        }
+    }
+
+    // Initialize settings
+    let mut settings = Settings {
         antialiasing: true,
         default_font: fonts::get_regular_font(),
         default_text_size: 16.0,
@@ -584,6 +864,22 @@ fn main() -> iced::Result {
         },
         ..Settings::default()
     };
+
+    // Check command line arguments for OAuth callback
+    if let Some(url) = std::env::args().nth(1) {
+        if url.starts_with("kamiview://oauth/callback") {
+            log::info!("Received OAuth callback: {}", url);
+            
+            // Extract code from URL
+            if let Some(code) = url.split("code=").nth(1) {
+                // Set initial flags for MaterialApp
+                settings.flags = Some(Message::OAuthCallback(code.to_string()));
+            }
+        }
+    }
+    
+    // Initialize fonts
+    fonts::init_fonts();
     
     MaterialApp::run(settings)
 }

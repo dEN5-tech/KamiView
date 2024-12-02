@@ -4,6 +4,7 @@ use crate::services::kodik::SearchResult;
 pub enum Screen {
     Main,
     Details(SearchResult),
+    Profile,
 }
 
 impl Default for Screen {

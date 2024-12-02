@@ -1,6 +1,6 @@
 use iced::widget::{button, text};
 use iced::{Element, Length};
-use crate::theme::Theme;
+use crate::theme::{Theme, ButtonVariant};
 use crate::Message;
 
 pub struct Button;
@@ -18,12 +18,16 @@ pub struct ButtonProps {
 
 impl Button {
     pub fn view<'a>(props: ButtonProps, theme: &Theme) -> Element<'a, Message> {
-        let style = theme.button(props.is_primary, props.is_active);
+        let style = if props.is_primary {
+            ButtonVariant::Primary
+        } else {
+            ButtonVariant::Secondary
+        };
         
         button(text(&props.label))
             .width(props.width)
             .padding(props.padding)
-            .style(iced::theme::Button::from(style))
+            .style(theme.button(style))
             .on_press(props.on_press)
             .into()
     }

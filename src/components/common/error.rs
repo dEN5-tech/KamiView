@@ -1,7 +1,7 @@
 use iced::widget::{container, button, text, row};
 use iced::{Element, Length};
 use crate::Message;
-use crate::theme::Theme;
+use crate::theme::{Theme, ButtonVariant};
 
 pub struct ErrorView;
 
@@ -11,10 +11,10 @@ impl ErrorView {
             row![
                 text(error)
                     .size(16)
-                    .style(theme.error),
+                    .style(iced::theme::Text::Color(theme.error)),
                 button("Повторить")
                     .on_press(retry_message)
-                    .style(theme.error_button())
+                    .style(theme.button(ButtonVariant::Error))
             ]
             .spacing(20)
         )
