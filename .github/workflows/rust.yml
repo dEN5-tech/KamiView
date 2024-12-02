@@ -28,7 +28,8 @@ jobs:
           libx11-dev \
           libxdo-dev \
           mpv \
-          libmpv-dev
+          libmpv-dev \
+          libwebkit2gtk-4.1-dev
         
     - name: Build
       run: cargo build --verbose
