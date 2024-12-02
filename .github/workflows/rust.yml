@@ -32,7 +32,24 @@ jobs:
           libwebkit2gtk-4.1-dev
         
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --verbose --release
       
     - name: Run tests
-      run: cargo test --verbose 
+      run: cargo test --verbose
+
+    - name: Generate release tag
+      id: tag
+      run: |
+        echo "::set-output name=release_tag::beta_$(date +"%Y.%m.%d_%H-%M")"
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.tag.outputs.release_tag }}
+        name: Beta Build ${{ steps.tag.outputs.release_tag }}
+        draft: false
+        prerelease: true
+        files: |
+          target/release/kamiview
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
