@@ -2,27 +2,44 @@ use std::fs;
 use std::path::Path;
 use std::env;
 
+#[cfg(all(target_os = "windows", feature = "windows_build"))]
 fn main() {
-    println!("cargo:rerun-if-changed=resources");
+    use std::io::Write;
+    use winres::WindowsResource;
 
-    let out_dir = env::var("OUT_DIR").unwrap();
-    let resources_dir = Path::new("resources");
-    let target_dir = Path::new(&out_dir).join("resources");
+    let mut res = WindowsResource::new();
+    res.set_icon("resources/icon.ico")
+        .set("ProductName", "KamiView")
+        .set("FileDescription", "A modern anime streaming app")
+        .set("LegalCopyright", "© 2024")
+        .set_manifest(r#"
+        <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+            <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+                <security>
+                    <requestedPrivileges>
+                        <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
+                    </requestedPrivileges>
+                </security>
+            </trustInfo>
+            <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+                <application>
+                    <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+                </application>
+            </compatibility>
+        </assembly>
+        "#);
 
-    if !target_dir.exists() {
-        fs::create_dir_all(&target_dir).expect("Failed to create resources directory");
+    if let Err(e) = res.compile() {
+        writeln!(std::io::stderr(), "Error: {}", e).unwrap();
+        std::process::exit(1);
     }
+}
 
-    copy_resources(resources_dir, &target_dir);
-
-    #[cfg(windows)]
-    {
-        let mut res = winres::WindowsResource::new();
-        res.set_icon("resources/icon.ico");
-        if let Err(e) = res.compile() {
-            eprintln!("Failed to compile resources: {}", e);
-        }
-    }
+#[cfg(not(all(target_os = "windows", feature = "windows_build")))]
+fn main() {
+    // Linux build steps
+    println!("cargo:rustc-link-lib=mpv");
+    println!("cargo:rustc-link-lib=X11");
 }
 
 fn copy_resources(from: &Path, to: &Path) {

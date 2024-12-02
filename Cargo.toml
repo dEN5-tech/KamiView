@@ -8,7 +8,7 @@ edition = "2021"
 [package.metadata.bundle]
 name = "KamiView"
 identifier = "com.kamiview.app"
-icon = ["resources/icon.ico"]
+icon = ["resources/icon.ico", "resources/icon.png"]
 version = "0.1.0"
 copyright = "© 2024"
 category = "Video"
@@ -55,10 +55,19 @@ directories = "5.0"
 discord-rich-presence = "0.2"
 
 [build-dependencies]
-winres = "0.1"
+winres = { version = "0.1", optional = true }
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.50"
+
+[target.'cfg(unix)'.dependencies]
+x11-dl = "2.21"
+libxdo = "0.6"
+gtk = { version = "0.18", features = ["v3_24"] }
+
+[features]
+default = []
+windows_build = ["winres"]

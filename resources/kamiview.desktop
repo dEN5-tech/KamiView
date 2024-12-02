@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=KamiView
+Comment=A modern anime streaming app
+Exec=kamiview
+Icon=kamiview
+Terminal=false
+Categories=AudioVideo;Video;Player;
+Keywords=anime;video;streaming; 

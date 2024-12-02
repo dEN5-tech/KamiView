@@ -79,6 +79,12 @@ struct CurrentMedia {
     translation: Option<String>,
 }
 
+#[cfg(target_os = "linux")]
+const MPV_SOCKET_PATH: &str = "/tmp/mpv-socket";
+
+#[cfg(target_os = "windows")]
+const MPV_SOCKET_PATH: &str = r"\\.\pipe\mpv-socket";
+
 impl MpvService {
     pub fn instance() -> MpvService {
         INIT.call_once(|| {
@@ -113,7 +119,11 @@ impl MpvService {
         thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                let socket_path = r#"\\.\pipe\mpv-socket"#.to_string();
+                #[cfg(target_os = "linux")]
+                let socket_path = MPV_SOCKET_PATH.to_string();
+                #[cfg(target_os = "windows")]
+                let socket_path = MPV_SOCKET_PATH.to_string();
+
                 let mut current_socket: Option<MpvSocket> = None;
                 let mut current_process: Option<std::process::Child> = None;
                 let mut position_tracker: Option<(String, tokio::time::Interval)> = None;
@@ -150,6 +160,7 @@ impl MpvService {
                                 Self::cleanup_resources(&mut current_socket, &mut current_process).await?;
 
                                 // Start new MPV process
+                                #[cfg(target_os = "linux")]
                                 let process = ProcessCommand::new("mpv")
                                     .args([
                                         &url,
@@ -164,6 +175,9 @@ impl MpvService {
                                         "--fullscreen",
                                         "--save-position-on-quit",
                                         &format!("--input-ipc-server={}", socket_path),
+                                        "--vo=x11", // Use X11 video output
+                                        "--hwdec=vaapi", // Hardware acceleration for Intel
+                                        "--hwdec-codecs=all",
                                     ])
                                     .spawn()
                                     .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to start MPV: {}", e)))?;
