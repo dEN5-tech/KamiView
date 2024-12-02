@@ -1,0 +1,31 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background pulse -->
+  <circle cx="100" cy="100" r="90" fill="#2A2A2A" opacity="0.1">
+    <animate 
+      attributeName="opacity"
+      values="0.1;0.3;0.1"
+      dur="2s"
+      repeatCount="indefinite"
+    />
+  </circle>
+  
+  <!-- Rotating arc -->
+  <circle 
+    cx="100" cy="100" r="60" 
+    stroke="#666666" 
+    stroke-width="4" 
+    stroke-linecap="round"
+    stroke-dasharray="30 301"
+    opacity="0.6"
+  >
+    <animateTransform
+      attributeName="transform"
+      type="rotate"
+      from="0 100 100"
+      to="360 100 100"
+      dur="1.5s"
+      repeatCount="indefinite"
+      easing="ease-in-out"
+    />
+  </circle>
+</svg> 
