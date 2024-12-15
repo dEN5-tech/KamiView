@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply antialiased;
+  }
+}
+
+@layer components {
+  .theme-transition * {
+    @apply transition-colors duration-200;
+  }
+
+  .custom-scrollbar {
+    @apply scrollbar-thin hover:scrollbar-thumb-primary/50
+    scrollbar-track-transparent
+    scrollbar-thumb-light-border/50 dark:scrollbar-thumb-dark-border/50;
+  }
+
+  .glass-effect {
+    @apply backdrop-blur-glass bg-opacity-80 dark:bg-opacity-80;
+  }
+}
+
+/* Focus styles */
+:focus-visible {
+  @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-light-background dark:ring-offset-dark-background;
+}
+
+/* Animations */
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
