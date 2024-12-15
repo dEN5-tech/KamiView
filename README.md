@@ -1,6 +1,3 @@
-I'll help create a README.md in Russian for the KamiView project based on the codebase:
-
-```markdown
 # KamiView
 
 KamiView - это десктопное приложение для просмотра аниме, построенное на Rust и Preact.
