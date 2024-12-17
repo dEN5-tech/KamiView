@@ -1,6 +1,6 @@
 # KamiView
 
-![](https://i.imgur.com/j3w2mXA.png)
+![](https://i.imgur.com/OF2VlvR.jpeg)
 
 KamiView - это десктопное приложение для просмотра аниме, построенное на Rust и Preact.
 
